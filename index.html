@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Document</title>
+</head>
+
+<body>
+  <div id="app">
+    <!-- comment -->
+    {{ message }}
+    <div>
+      {{ ok }}
+    </div>
+  </div>
+</body>
+<script src="vue.my.js"></script>
+<script>
+  new Vue({
+    el: "#app",
+    data: {
+      message: "Hello Vue!",
+      ok: true
+    }
+  });
+</script>
+
+</html>
