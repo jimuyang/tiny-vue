@@ -9098,6 +9098,7 @@
           }
 
           // Start tag:
+          debugger
           const startTagMatch = parseStartTag();
           if (startTagMatch) {
             handleStartTag(startTagMatch);
