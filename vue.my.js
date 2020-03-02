@@ -1,7 +1,7 @@
 (function (global, factory) {
+    console.log("start")
     global.Vue = factory()
-}(this, (function () {
-    'use strict'
+})(this, (function () {
 
     const unicodeLetters = 'a-zA-Z\u00B7\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u037D\u037F-\u1FFF\u200C-\u200D\u203F-\u2040\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD'
     // Regular Expressions for parsing tags and attributes
@@ -15,7 +15,6 @@
     const comment = /^<!\--/;
     const conditionalComment = /^<!\[/;
 
-
     function Vue(options) {
         test(options.el)
     }
@@ -23,44 +22,92 @@
     function test(el) {
         let rootNode = document.querySelector(el)
         let html = rootNode.outerHTML
-        console.log(html.trim())
+        console.log(parseHTML(html.trim()))
     }
 
-    function parseHTML(html, options) {
-        const stack = 0
-        let index = 0
-        let lastTag
+    /**
+     * 将html解析成ast
+     */
+    function parseHTML(html) {
+        let root = null
+        const stack = [] // 栈 存储ast元素
+        function currentParent() { return stack[stack.length - 1] }
+        let index = 0    // html解析游标
 
         while (html) {
             let textEnd = html.indexOf('<')
-            // 文本结束 标签开始
-            if (textEnd === 0) {
-                // 注释
-                if (comment.test(html)) {
-                    const commentEnd = html.indexOf('-->')
-                    if (commentEnd >= 0) {
-                        options.comment(html.substring(4, commentEnd), index, index + commentEnd + 3);
-                        advance(commentEnd + 3)
-                        continue
-                    }
+            //  标签或注释之前的文本 
+            if (textEnd > 0) {
+                // 标签之前有文本
+                const text = html.substring(0, textEnd)
+                advance(text.length)
+                const textAst = {
+                    type: 3,
+                    text
                 }
-
-
-                // 结束标签 
-                const endTagMatch = html.match(endTag)
-                if (endTagMatch) {
-                    const curIndex = index
-                    advance(endTagMatch[0].length)
-                    parseEndTag(endTagMatch[1], curIndex, index)
+                currentParent().children.push(textAst)
+                continue
+            }
+            // 如果是注释
+            if (comment.test(html)) {
+                const commentEnd = html.indexOf('-->')
+                if (commentEnd >= 0) {
+                    const commentAst = {
+                        type: 3,
+                        text: html.substring(4, commentEnd),
+                        isComment: true
+                    }
+                    currentParent().children.push(commentAst)
+                    advance(commentEnd + 3)
                     continue
                 }
-
-                // 开始标签
-                const startTagMatch = parseStartTag()
-                if (startTagMatch) {
-                    handleStartTag(startTagMatch)
+            }
+            // 如果是关闭标签 currentParent()应该就是与之匹配的标签 
+            const endTagMatch = html.match(endTag)
+            if (endTagMatch) {
+                advance(endTagMatch[0].length)
+                if (currentParent().tag !== endTagMatch[1]) {
+                    warn("end tag not match")
                 }
+                stack.pop()
+            }
 
+            // 如果是开始标签 
+            const startTagMatch = html.match(startTagOpen) // <div
+            if (startTagMatch) {
+                advance(startTagMatch[0].length)
+                const attrs = []
+                // 解析标签属性直到标签闭合
+                let end, attr;
+                while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
+                    const attrMatch = {
+                        name: attr[1],
+                        value: attr[3] || attr[4] || attr[5] || '',
+                    }
+                    advance(attr[0].length);
+                    attrs.push(attrMatch);
+                }
+                if (end) {
+                    advance(end[0].length)
+                } else {
+                    warn("no end")
+                }
+                const tagAst = {
+                    type: 1,
+                    tag: startTagMatch[1],
+                    attrsList: attrs,
+                    attrsMap: makeAttrsMap(attrs),
+                    children: [],
+                    parent: currentParent()
+                }
+                if (stack.length) {
+                    currentParent().children.push(tagAst)
+                } else {
+                    root = tagAst // 第一个标签一定是root
+                }
+                if (!(end[1] || isUnaryTag(tagAst.tag))) {
+                    stack.push(tagAst) // <br/> <img> 不能成为parent 
+                }
             }
         }
 
@@ -68,95 +115,7 @@
             index += n
             html = html.substring(n)
         }
-
-        /**
-         * 解析开始标签
-         */
-        function parseStartTag() {
-            // 开始标签open <div
-            const start = html.match(startTagOpen)
-            if (start)
-                const match = {
-                    tagName: start[1],
-                    attrs: [],
-                    start: index
-                }
-            advance(start[0].length)
-            // 解析标签属性直到标签闭合
-            let end, attr;
-            while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
-                const attrMatch = {
-                    name: attr[1],
-                    value: attr[3] || attr[4] || attr[5] || '',
-                    start: index
-                }
-                advance(attr[0].length);
-                attrMatch.end = index
-                match.attrs.push(attrMatch);
-            }
-            if (end) {
-                match.unarySlash = end[1]; // <div/>
-                advance(end[0].length)
-                match.end = index
-                return match
-            }
-        }
-
-        function handleStartTag(match) {
-            const tagName = match.tagName
-            const unarySlash = match.unarySlash
-
-            if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
-                parseEndTag(lastTag);
-            }
-            if (canBeLeftOpenTag(tagName) && lastTag === tagName) {
-                parseEndTag(tagName);
-            }
-            // 是否自闭合
-            const unary = isUnaryTag(tagName) || !!unarySlash;
-            if (!unary) {
-                stack.push({ tag: tagName, lowerCasedTag: tagName.toLowerCase(), attrs: attrs, start: match.start, end: match.end });
-                lastTag = tagName;
-            }
-            options.start(tagName, attrs, unary, match.start, match.end);
-        }
-
-        function parseEndTag(tagName, start, end) {
-            let pos, lowerCasedTagName
-            if (start == null) start = index
-            if (end == null) end = index
-            // 对应的打开标签
-            if (tagName) {
-                lowerCasedTagName = tagName.toLowerCase()
-                // 找不到时 pos=-1
-                for (pos = stack.length - 1; pos >= 0; pos--) {
-                    if (stack[pos].lowerCasedTag === lowerCasedTagName) {
-                        break
-                    }
-                }
-            } else {
-                // 关闭所有stack内的标签
-                pos = 0
-            }
-            if (pos >= 0) {
-                for (let i = stack.length - 1; i >= pos; i--) {
-                    if (i > pos || !tagName) {
-                        warn(`tag <${stack[i].tag}> has no matching end tag.`)
-                    }
-                    options.end(stack[i].tag, start, end);
-                }
-                // 关闭区间内的所有标签
-                stack.length = pos;
-                lastTag = pos && stack[pos - 1].tag;
-            } else if (lowerCasedTagName === 'br') {
-                options.start(tagName, [], true, start, end);
-            } else if (lowerCasedTagName === 'p') {
-                options.start(tagName, [], false, start, end);
-                options.end(tagName, start, end);
-            }
-        }
-
-
+        return root
     }
 
     const canBeLeftOpenTag = makeMap(
@@ -174,7 +133,6 @@
         'optgroup,option,param,rp,rt,source,style,summary,tbody,td,tfoot,th,thead,' +
         'title,tr,track'
     );
-
 
     /**
      * Make a map and return a function for checking if a key
@@ -195,6 +153,20 @@
         console.error(`[Vue compiler]: ${msg}`);
     }
 
+    function makeAttrsMap(attrs) {
+        const map = {};
+        for (let i = 0, l = attrs.length; i < l; i++) {
+            map[attrs[i].name] = attrs[i].value;
+        }
+        return map
+    }
+
     return Vue
-})))
+}))
+
+
+// (function (global, factory) {
+//     console.log("start");
+//     global.Vue = factory()
+// })(this, (function () { return 1 }))
 
