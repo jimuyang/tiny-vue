@@ -9098,7 +9098,6 @@
           }
 
           // Start tag:
-          debugger
           const startTagMatch = parseStartTag();
           if (startTagMatch) {
             handleStartTag(startTagMatch);
@@ -10606,6 +10605,7 @@
   ) {
     const state = new CodegenState(options);
     const code = ast ? genElement(ast, state) : '_c("div")';
+    debugger
     return {
       render: `with(this){return ${code}}`,
       staticRenderFns: state.staticRenderFns

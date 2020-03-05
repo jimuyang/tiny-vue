@@ -22,7 +22,9 @@
     function test(el) {
         let rootNode = document.querySelector(el)
         let html = rootNode.outerHTML
-        console.log(parseHTML(html.trim()))
+        const ast = parseHTML(html.trim())
+        console.log(ast)
+        const code = generate(ast)
     }
 
     /**
@@ -42,7 +44,7 @@
                 const text = html.substring(0, textEnd)
                 advance(text.length)
                 const textAst = {
-                    type: 3,
+                    type: 2,
                     text
                 }
                 currentParent().children.push(textAst)
@@ -116,6 +118,61 @@
             html = html.substring(n)
         }
         return root
+    }
+
+    /**
+     * 将ast生成为render code
+     */
+    function generate(ast) {
+        const code = genElement(ast)
+        console.log(code)
+        return `with(this){return ${code}}`
+    }
+
+    function genElement(node) {
+        const children = genChildren(node)
+        const data = genData(node)
+        let code = `_c('${node.tag}'${data ? `,${data}` : ``}${children ? `,${children}` : ``})`
+        return code
+    }
+
+    function genChildren(node) {
+        const children = node.children
+        if (children.length) {
+            return `[${children.map(c => genNode(c)).join(',')}]`
+        }
+    }
+
+    function genData(node) {
+        let data = '{'
+        // attributes
+        if (node.attrsList) {
+            data += `attrs:{${genProps(node.attrsList)}},`;
+        }
+        data = data.replace(/,$/, '') + '}';
+        return data 
+    }
+
+    function genProps(props) {
+        let res = ''
+        for (let i = 0; i < props.length; i++) {
+            const prop = props[i]
+            res += `"${prop.name}":${prop.value},`
+        }
+        return res.slice(0, -1)
+    }
+
+    function genNode(node) {
+        // console.log(node)
+        if (node.type === 1) {
+            return genElement(node)
+        } else if (node.type === 3 && node.isComment) {
+            return `_e(${JSON.stringify(node.text)})`
+        } else if (node.type === 2) {
+            return `_v(${JSON.stringify(node.text)})`
+        } else {
+            return `_v(${JSON.stringify(node.text)})`
+        }
     }
 
     const canBeLeftOpenTag = makeMap(
